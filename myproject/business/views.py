@@ -1,18 +1,16 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
+from permissions_app.utils import check_permission
 
-class BusinessObjectList(APIView):
-    """
-    Return a list of fictional business objects.
-    """
+class ProductsView(APIView):
     def get(self, request):
-        # Fake data
-        data = [
-            {"id": 1, "name": "Object A"},
-            {"id": 2, "name": "Object B"},
-            {"id": 3, "name": "Object C"},
-        ]
-        # TODO: check permissions in real access control
-        return Response(data)
+        if not request.user:
+            return Response({"error": "Unauthorized"}, status=401)
+
+        if not check_permission(request.user, "products", "read"):
+            return Response({"error": "Forbidden"}, status=403)
+
+        return Response([
+            {"id": 1, "name": "Laptop"},
+            {"id": 2, "name": "Phone"}
+        ])
