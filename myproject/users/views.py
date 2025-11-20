@@ -1,50 +1,60 @@
-
+from django.shortcuts import render
+from .serializers import UserRegisterSerializer, UserSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth import authenticate, login, logout
+from rest_framework import status
 from .models import User
-from .serializers import UserSerializer
+from .serializers import UserRegisterSerializer, UserSerializer
+import jwt
+from django.conf import settings
+
+
+
+SECRET_KEY = "YOUR_SECRET_KEY"
 
 class RegisterView(APIView):
     def post(self, request):
-        serializer = UserSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=201)
+        serializer = UserRegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({"message": "User created"}, status=201)
+        return Response(serializer.errors, status=400)
 
 class LoginView(APIView):
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
-        user = authenticate(request, email=email, password=password)
-        if user and user.is_active:
-            login(request, user)
-            return Response({"detail": "Logged in"})
-        return Response({"detail": "Invalid credentials"}, status=401)
+        try:
+            user = User.objects.get(email=email, is_active=True)
+        except User.DoesNotExist:
+            return Response({"error": "Invalid credentials"}, status=401)
+
+        if user.check_password(password):
+            token = jwt.encode({"user_id": user.id}, SECRET_KEY, algorithm="HS256")
+            return Response({"token": token})
+        return Response({"error": "Invalid credentials"}, status=401)
 
 class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
-
     def post(self, request):
-        logout(request)
-        return Response({"detail": "Logged out"})
+        # JWT stateless logout → client deletes token
+        return Response({"message": "Logged out"}, status=200)
 
 class UserUpdateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def put(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+    def patch(self, request):
+        user = request.user
+        if not user:
+            return Response(status=401)
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
 
 class UserDeleteView(APIView):
-    permission_classes = [IsAuthenticated]
-
     def delete(self, request):
         user = request.user
+        if not user:
+            return Response(status=401)
         user.is_active = False
         user.save()
-        logout(request)
-        return Response({"detail": "User deactivated"}, status=204)
+        return Response({"message": "User soft deleted"}, status=200)
